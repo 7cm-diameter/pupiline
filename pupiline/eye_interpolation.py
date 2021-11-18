@@ -1,6 +1,5 @@
-import glob
 from pathlib import Path
-from typing import List, Tuple
+from typing import Callable, List, Tuple
 
 import numpy as np
 import pandas as pd
@@ -18,32 +17,32 @@ def remove_scorer(data: pd.DataFrame):
     return data.set_axis(idx, axis=1)
 
 
-def contains_x(key: DLCKey):
-    return "x" in key
+def contains(pattern: str) -> Callable:
+    def inner(key: DLCKey) -> bool:
+        return pattern in key
 
-
-def contains_y(key: DLCKey):
-    return "y" in key
-
-
-def contains_likelihood(key: DLCKey):
-    return "likelihood" in key
+    return inner
 
 
 def replace_low_likelihood_nan(data: pd.DataFrame,
-                               threshold: float) -> NDArray:
+                               threshold: float) -> NDArray[np.float_]:
     likelihood_over_threshold = data > threshold
     return np.array(likelihood_over_threshold[likelihood_over_threshold])
 
 
-def make_dataframe_before_interpolated(
-        outlitter_to_nan: NDArray,
-        idx_list: List[Tuple[Bodyparts, Coordinate]]) -> pd.DataFrame:
-
-    Dataframe_before_interpolated = pd.DataFrame(data=outlitter_to_nan)
+def as_dataframe(array: NDArray[np.float_],
+                 idx_list: List[Tuple[Bodyparts, Coordinate]]) -> pd.DataFrame:
+    d = pd.DataFrame(data=array)
     idx = pd.MultiIndex.from_tuples(idx_list)
-    Dataframe_before_interpolated.set_axis(idx, axis=1, inplace=True)
-    return Dataframe_before_interpolated
+    d.set_axis(idx, axis=1, inplace=True)
+    return d
+
+
+def create_dataframe_with_nan(data: pd.DataFrame,
+                              nan_matrix: NDArray[np.float_],
+                              axis: str) -> pd.DataFrame:
+    axis_idx = list(filter(contains(axis), data.keys()))
+    return as_dataframe(np.array(data[axis_idx]) * nan_matrix, axis_idx)
 
 
 def as_output_filename(h5_path: Path, data_name: str):
@@ -55,47 +54,31 @@ def as_output_filename(h5_path: Path, data_name: str):
 
 
 if __name__ == '__main__':
+    # TODO: Add support for specifying the data to be read
+    # and the directory to be output by command line arguments
+    AXIS = ["x", "y"]
 
-    h5p = "where/the/DLC/h5/files/is"
-    h5s = glob.glob(h5p + "*.h5")
-    likelihood_threshold = 0.9
+    h5 = "path/to/analyzed/data"
+    tracked_data = remove_scorer(pd.DataFrame(pd.read_hdf(h5)))
 
-    for h5 in h5s:
+    likelihood_idx = list(filter(contains("likelihood"), tracked_data.keys()))
+    nan_matrix = replace_low_likelihood_nan(tracked_data[likelihood_idx], 0.9)
 
-        print(f"processing " + h5)
+    contains_nan = list(
+        map(lambda ax: create_dataframe_with_nan(tracked_data, nan_matrix, ax),
+            AXIS))
+    data_contains_nan = pd.concat(contains_nan,
+                                  axis=1).sort_index(axis=1, inplace=False)
+    if data_contains_nan is None:
+        raise ValueError("Failed to create dataframe.")
 
-        tracked_data = pd.read_hdf(h5)
-        tracked_data = remove_scorer(tracked_data)
+    data_interpolated = data_contains_nan.astype("float64").interpolate()
 
-        x_idx = list(filter(contains_x, tracked_data.keys()))
-        y_idx = list(filter(contains_y, tracked_data.keys()))
-        likelihood_data = list(filter(contains_likelihood,
-                                      tracked_data.keys()))
+    if data_interpolated is None:
+        raise ValueError("Failed to create dataframe.")
 
-        x_array = np.array(tracked_data[x_idx])
-        y_array = np.array(tracked_data[y_idx])
-        likelihood_array_replaced = replace_low_likelihood_nan(
-            tracked_data[likelihood_data], likelihood_threshold)
+    output_path_nan = as_output_filename(Path(h5), "_outlitter_to_nan")
+    output_path_interpolated = as_output_filename(Path(h5), "_interpolated")
 
-        x_outlitter_to_nan = x_array * likelihood_array_replaced
-        y_outlitter_to_nan = y_array * likelihood_array_replaced
-
-        x_Dataframe_before_interpolated = make_dataframe_before_interpolated(
-            x_outlitter_to_nan, x_idx)
-        y_Dataframe_before_interpolated = make_dataframe_before_interpolated(
-            y_outlitter_to_nan, y_idx)
-
-        data_before_interpolated = pd.concat(
-            [x_Dataframe_before_interpolated, y_Dataframe_before_interpolated],
-            axis=1)
-        data_before_interpolated.sort_index(axis=1, inplace=True)
-
-        data_after_interpolated = data_before_interpolated.astype(
-            "float64").interpolate()
-
-        output_path_nan = as_output_filename(Path(h5), "_outlitter_to_NaN")
-        output_path_interpolated = as_output_filename(Path(h5),
-                                                      "_interpolated")
-
-        data_before_interpolated.to_hdf(output_path_nan, "key")
-        data_after_interpolated.to_hdf(output_path_interpolated, "key")
+    data_contains_nan.to_hdf(output_path_nan, "key")
+    data_interpolated.to_hdf(output_path_interpolated, "key")

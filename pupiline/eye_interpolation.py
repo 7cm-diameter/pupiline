@@ -4,7 +4,7 @@ from typing import List, Tuple
 
 import numpy as np
 import pandas as pd
-from nptyping import NDArray
+from numpy.typing import NDArray
 from pandas.core.frame import DataFrame
 
 Bodyparts = str
@@ -37,8 +37,9 @@ def contains_likelihood(key: DLCKey):
     return "likelihood" in key
 
 
-def make_dataframe_before_interpolated(outlitter_to_nan: NDArray,
-                                       idx_list: list) -> pd.DataFrame:
+def make_dataframe_before_interpolated(
+        outlitter_to_nan: NDArray,
+        idx_list: List[Tuple[Bodyparts, Coordinate]]) -> pd.DataFrame:
 
     Dataframe_before_interpolated = pd.DataFrame(data=outlitter_to_nan)
     idx = pd.MultiIndex.from_tuples(idx_list)

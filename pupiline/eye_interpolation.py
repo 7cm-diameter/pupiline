@@ -18,12 +18,6 @@ def remove_scorer(data: pd.DataFrame):
     return data.set_axis(idx, axis=1)
 
 
-def replace_low_likelihood_nan(data: pd.DataFrame,
-                               threshold: float) -> NDArray:
-    likelihood_over_threshold = data > threshold
-    return np.array(likelihood_over_threshold[likelihood_over_threshold])
-
-
 def contains_x(key: DLCKey):
     return "x" in key
 
@@ -34,6 +28,12 @@ def contains_y(key: DLCKey):
 
 def contains_likelihood(key: DLCKey):
     return "likelihood" in key
+
+
+def replace_low_likelihood_nan(data: pd.DataFrame,
+                               threshold: float) -> NDArray:
+    likelihood_over_threshold = data > threshold
+    return np.array(likelihood_over_threshold[likelihood_over_threshold])
 
 
 def make_dataframe_before_interpolated(
